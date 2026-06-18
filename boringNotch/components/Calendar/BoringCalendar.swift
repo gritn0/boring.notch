@@ -13,7 +13,7 @@ struct Config: Equatable {
     var past: Int = 7
     var future: Int = 14
     var steps: Int = 1  // Each step is one day
-    var spacing: CGFloat = 0
+    var spacing: CGFloat = 10
     var showsText: Bool = true
     var offset: Int = 2  // Number of dates to the left of the selected date
 }
@@ -94,7 +94,7 @@ struct WheelPicker: View {
                 dateCircle(date: date, isToday: isToday, isSelected: isSelected)
             }
             .padding(.vertical, 4)
-            .padding(.horizontal, 4)
+            .padding(.horizontal, 14)
             .background(isSelected ? Color.effectiveAccentBackground : Color.clear)
             .cornerRadius(8)
         }

@@ -49,9 +49,9 @@ struct AlbumArtView: View {
                         : MusicPlayerImageSizes.cornerRadiusInset.closed)
             )
             .aspectRatio(1, contentMode: .fit)
-            .scaleEffect(x: 1.3, y: 1.4)
+            .scaleEffect(x: 1.2, y: 1.25)
             .rotationEffect(.degrees(92))
-            .blur(radius: 40)
+            .blur(radius: 16)
             .opacity(musicManager.isPlaying ? 0.5 : 0)
     }
 
@@ -440,18 +440,8 @@ struct NotchHomeView: View {
     }
 
     private var mainContent: some View {
-        HStack(alignment: .top, spacing: (shouldShowCamera && Defaults[.showCalendar]) ? 10 : 15) {
+        HStack(alignment: .top, spacing: 15) {
             MusicPlayerView(albumArtNamespace: albumArtNamespace)
-
-            if Defaults[.showCalendar] {
-                CalendarView()
-                    .frame(width: shouldShowCamera ? 170 : 215)
-                    .onHover { isHovering in
-                        vm.isHoveringCalendar = isHovering
-                    }
-                    .environmentObject(vm)
-                    .transition(.opacity)
-            }
 
             if shouldShowCamera {
                 CameraPreviewView(webcamManager: webcamManager)
@@ -461,7 +451,7 @@ struct NotchHomeView: View {
                     .animation(.interactiveSpring(response: 0.32, dampingFraction: 0.76, blendDuration: 0), value: shouldShowCamera)
             }
         }
-        .transition(.asymmetric(insertion: .opacity.combined(with: .move(edge: .top)), removal: .opacity))
+        .transition(.opacity)
         .blur(radius: vm.notchState == .closed ? 30 : 0)
     }
 }

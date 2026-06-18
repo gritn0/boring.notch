@@ -25,6 +25,8 @@ struct ContentView: View {
     @ObservedObject var volumeManager = VolumeManager.shared
     @State private var hoverTask: Task<Void, Never>?
     @State private var isHovering: Bool = false
+    @State private var bounceScale: CGFloat = 1.0
+    @State private var bounceResetTask: Task<Void, Never>?
     @State private var anyDropDebounceTask: Task<Void, Never>?
 
     @State private var gestureProgress: CGFloat = .zero
@@ -112,6 +114,7 @@ struct ContentView: View {
                         color: ((vm.notchState == .open || isHovering) && Defaults[.enableShadow])
                             ? .black.opacity(0.7) : .clear, radius: Defaults[.cornerRadiusScaling] ? 6 : 4
                     )
+                    .scaleEffect(bounceScale, anchor: .top)
                     .padding(
                         .bottom,
                         vm.effectiveClosedNotchHeight == 0 ? 10 : 0
@@ -120,7 +123,7 @@ struct ContentView: View {
                 mainLayout
                     .frame(height: vm.notchState == .open ? vm.notchSize.height : nil)
                     .conditionalModifier(true) { view in
-                        let openAnimation = Animation.spring(response: 0.42, dampingFraction: 0.8, blendDuration: 0)
+                        let openAnimation = Animation.spring(response: 0.3, dampingFraction: 0.8, blendDuration: 0)
                         let closeAnimation = Animation.spring(response: 0.45, dampingFraction: 1.0, blendDuration: 0)
                         
                         return view
@@ -347,6 +350,14 @@ struct ContentView: View {
                     switch coordinator.currentView {
                     case .home:
                         NotchHomeView(albumArtNamespace: albumArtNamespace)
+                    case .calendar:
+                        CalendarView()
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                            .onHover { isHovering in
+                                vm.isHoveringCalendar = isHovering
+                            }
+                            .environmentObject(vm)
+                            .transition(.opacity)
                     case .shelf:
                         ShelfView()
                     }
@@ -518,7 +529,9 @@ struct ContentView: View {
             withAnimation(animationSpring) {
                 isHovering = true
             }
-            
+
+            triggerBounce()
+
             if vm.notchState == .closed && Defaults[.enableHaptics] {
                 haptics.toggle()
             }
@@ -552,6 +565,27 @@ struct ContentView: View {
                     if self.vm.notchState == .open && !self.vm.isBatteryPopoverActive && !SharingStateManager.shared.preventNotchClose {
                         self.vm.close()
                     }
+                }
+            }
+        }
+    }
+
+    /// One-shot "pop": quickly scale the notch up, then let it bounce back to its
+    /// resting size. Fires on hover-in only.
+    private func triggerBounce() {
+        if coordinator.firstLaunch { return }
+        bounceResetTask?.cancel()
+
+        withAnimation(.spring(response: 0.18, dampingFraction: 0.55, blendDuration: 0)) {
+            bounceScale = 1.14
+        }
+
+        bounceResetTask = Task {
+            try? await Task.sleep(for: .milliseconds(120))
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                withAnimation(.bouncy(duration: 0.4, extraBounce: 0.4)) {
+                    bounceScale = 1.0
                 }
             }
         }
