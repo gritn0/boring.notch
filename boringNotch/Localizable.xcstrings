@@ -602,6 +602,7 @@
       }
     },
     "%@" : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -9008,6 +9009,7 @@
       }
     },
     "Enjoy your free time!" : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -14710,6 +14712,7 @@
       }
     },
     "No events" : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -14810,6 +14813,7 @@
       }
     },
     "No events today" : {
+      "extractionState" : "stale",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
@@ -15009,6 +15013,9 @@
           }
         }
       }
+    },
+    "No upcoming events" : {
+
     },
     "Not Now" : {
       "localizations" : {
@@ -15509,6 +15516,9 @@
           }
         }
       }
+    },
+    "Nothing on your plate this week!" : {
+
     },
     "Open Calendar Settings" : {
       "localizations" : {
