@@ -25,9 +25,13 @@ struct ContentView: View {
     @ObservedObject var volumeManager = VolumeManager.shared
     @State private var hoverTask: Task<Void, Never>?
     @State private var isHovering: Bool = false
-    @State private var bounceScale: CGFloat = 1.0
-    @State private var bounceResetTask: Task<Void, Never>?
+    @State private var hoverScale: CGFloat = 1.0
     @State private var anyDropDebounceTask: Task<Void, Never>?
+    /// Global mouse monitors used to close the open notch once the cursor moves far away.
+    @State private var proximityMonitors: [Any] = []
+    /// Only allow proximity-close after the cursor has actually been near the open notch
+    /// (so a keyboard-opened notch with the cursor elsewhere isn't closed instantly).
+    @State private var armedForProximityClose: Bool = false
 
     @State private var gestureProgress: CGFloat = .zero
 
@@ -44,6 +48,17 @@ struct ContentView: View {
 
     private let extendedHoverPadding: CGFloat = 30
     private let zeroHeightHoverPadding: CGFloat = 10
+
+    /// How much bigger the closed notch grows while hovered.
+    private let hoverScaleAmount: CGFloat = 1.12
+    /// How far (points) the cursor must be from the open notch before it closes.
+    private let closeProximityMargin: CGFloat = 160
+
+    /// The enlarged/darker shadow only applies to the closed notch's hover "pop",
+    /// not to the open (big) notch.
+    private var hoverShadowActive: Bool {
+        isHovering && vm.notchState == .closed
+    }
 
     private var topCornerRadius: CGFloat {
        ((vm.notchState == .open) && Defaults[.cornerRadiusScaling])
@@ -112,9 +127,13 @@ struct ContentView: View {
                     }
                     .shadow(
                         color: ((vm.notchState == .open || isHovering) && Defaults[.enableShadow])
-                            ? .black.opacity(0.7) : .clear, radius: Defaults[.cornerRadiusScaling] ? 6 : 4
+                            ? .black.opacity(hoverShadowActive ? 0.9 : 0.7) : .clear,
+                        radius: {
+                            let base: CGFloat = Defaults[.cornerRadiusScaling] ? 6 : 4
+                            return hoverShadowActive ? base * 2.5 : base  // bigger shadow on hover
+                        }()
                     )
-                    .scaleEffect(bounceScale, anchor: .top)
+                    .scaleEffect(vm.notchState == .closed ? hoverScale : 1.0, anchor: .top)
                     .padding(
                         .bottom,
                         vm.effectiveClosedNotchHeight == 0 ? 10 : 0
@@ -164,11 +183,23 @@ struct ContentView: View {
                         }
                     }
                     .onChange(of: vm.notchState) { _, newState in
-                        if newState == .closed && isHovering {
-                            withAnimation {
-                                isHovering = false
+                        if newState == .open {
+                            armedForProximityClose = isHovering
+                            startProximityMonitoring()
+                        } else {
+                            stopProximityMonitoring()
+                            if isHovering {
+                                withAnimation {
+                                    isHovering = false
+                                }
+                            }
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8, blendDuration: 0)) {
+                                hoverScale = 1.0
                             }
                         }
+                    }
+                    .onDisappear {
+                        stopProximityMonitoring()
                     }
                     .onChange(of: vm.isBatteryPopoverActive) {
                         if !vm.isBatteryPopoverActive && !isHovering && vm.notchState == .open && !SharingStateManager.shared.preventNotchClose {
@@ -358,6 +389,11 @@ struct ContentView: View {
                             }
                             .environmentObject(vm)
                             .transition(.opacity)
+                    case .mirror:
+                        CameraPreviewView(webcamManager: WebcamManager.shared)
+                            .environmentObject(vm)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .transition(.opacity)
                     case .shelf:
                         ShelfView()
                     }
@@ -524,70 +560,71 @@ struct ContentView: View {
     private func handleHover(_ hovering: Bool) {
         if coordinator.firstLaunch { return }
         hoverTask?.cancel()
-        
+
         if hovering {
             withAnimation(animationSpring) {
                 isHovering = true
             }
 
-            triggerBounce()
+            // Closed notch: "pop" a bit bigger and stay that size while hovered.
+            // The notch opens only on click (see onTapGesture), not on hover.
+            withAnimation(.spring(response: 0.25, dampingFraction: 0.7, blendDuration: 0)) {
+                hoverScale = hoverScaleAmount
+            }
 
             if vm.notchState == .closed && Defaults[.enableHaptics] {
                 haptics.toggle()
             }
-            
-            guard vm.notchState == .closed,
-                  !coordinator.sneakPeek.show,
-                  Defaults[.openNotchOnHover] else { return }
-            
-            hoverTask = Task {
-                try? await Task.sleep(for: .seconds(Defaults[.minimumHoverDuration]))
-                guard !Task.isCancelled else { return }
-                
-                await MainActor.run {
-                    guard self.vm.notchState == .closed,
-                          self.isHovering,
-                          !self.coordinator.sneakPeek.show else { return }
-                    
-                    self.doOpen()
-                }
-            }
         } else {
-            hoverTask = Task {
-                try? await Task.sleep(for: .milliseconds(100))
-                guard !Task.isCancelled else { return }
-                
-                await MainActor.run {
-                    withAnimation(animationSpring) {
-                        self.isHovering = false
-                    }
-                    
-                    if self.vm.notchState == .open && !self.vm.isBatteryPopoverActive && !SharingStateManager.shared.preventNotchClose {
-                        self.vm.close()
-                    }
-                }
+            withAnimation(animationSpring) {
+                isHovering = false
             }
+            // Return the closed notch to its original size on hover out.
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.8, blendDuration: 0)) {
+                hoverScale = 1.0
+            }
+            // Note: the open notch is NOT closed here — it closes only when the
+            // cursor moves far away (see proximity monitors).
         }
     }
 
-    /// One-shot "pop": quickly scale the notch up, then let it bounce back to its
-    /// resting size. Fires on hover-in only.
-    private func triggerBounce() {
-        if coordinator.firstLaunch { return }
-        bounceResetTask?.cancel()
+    // MARK: - Proximity-based close (open notch)
 
-        withAnimation(.spring(response: 0.18, dampingFraction: 0.55, blendDuration: 0)) {
-            bounceScale = 1.14
+    /// Start watching the global cursor position while the notch is open so it can
+    /// close once the cursor moves far enough away.
+    private func startProximityMonitoring() {
+        stopProximityMonitoring()
+        let global = NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved]) { _ in
+            self.evaluateProximityClose()
         }
+        let local = NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved]) { event in
+            self.evaluateProximityClose()
+            return event
+        }
+        proximityMonitors = [global, local].compactMap { $0 }
+    }
 
-        bounceResetTask = Task {
-            try? await Task.sleep(for: .milliseconds(120))
-            guard !Task.isCancelled else { return }
-            await MainActor.run {
-                withAnimation(.bouncy(duration: 0.4, extraBounce: 0.4)) {
-                    bounceScale = 1.0
-                }
-            }
+    private func stopProximityMonitoring() {
+        for monitor in proximityMonitors {
+            NSEvent.removeMonitor(monitor)
+        }
+        proximityMonitors = []
+    }
+
+    private func evaluateProximityClose() {
+        guard vm.notchState == .open else { return }
+        // Still near the notch (within the margin) — keep it open and arm closing.
+        if vm.isMouseHovering(margin: closeProximityMargin) {
+            armedForProximityClose = true
+            return
+        }
+        // Only close once the cursor has actually been near since opening.
+        guard armedForProximityClose else { return }
+        // Don't close while a popover/share session needs the notch open.
+        guard !vm.isBatteryPopoverActive, !SharingStateManager.shared.preventNotchClose else { return }
+
+        withAnimation(animationSpring) {
+            vm.close()
         }
     }
 

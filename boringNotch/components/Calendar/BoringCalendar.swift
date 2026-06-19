@@ -70,10 +70,8 @@ struct AgendaView: View {
 
     var body: some View {
         if sections.isEmpty {
-            VStack {
-                EmptyEventsView()
-                Spacer(minLength: 0)
-            }
+            EmptyEventsView()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             ScrollView(.vertical) {
                 LazyVStack(alignment: .leading, spacing: 4) {

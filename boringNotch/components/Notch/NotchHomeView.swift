@@ -49,9 +49,9 @@ struct AlbumArtView: View {
                         : MusicPlayerImageSizes.cornerRadiusInset.closed)
             )
             .aspectRatio(1, contentMode: .fit)
-            .scaleEffect(x: 1.2, y: 1.25)
+            .scaleEffect(x: 1.3, y: 1.4)
             .rotationEffect(.degrees(92))
-            .blur(radius: 16)
+            .blur(radius: 40)
             .opacity(musicManager.isPlaying ? 0.5 : 0)
     }
 
@@ -136,6 +136,7 @@ struct MusicControlsView: View {
         }
         .padding(.top, 10)
         .padding(.leading, 5)
+        .padding(.trailing, 5)
     }
 
     private func songInfo(width: CGFloat) -> some View {
@@ -420,7 +421,6 @@ struct VolumeControlView: View {
 
 struct NotchHomeView: View {
     @EnvironmentObject var vm: BoringViewModel
-    @ObservedObject var webcamManager = WebcamManager.shared
     @ObservedObject var batteryModel = BatteryStatusViewModel.shared
     @ObservedObject var coordinator = BoringViewCoordinator.shared
     let albumArtNamespace: Namespace.ID
@@ -435,21 +435,9 @@ struct NotchHomeView: View {
         .transition(.opacity)
     }
 
-    private var shouldShowCamera: Bool {
-        Defaults[.showMirror] && webcamManager.cameraAvailable && vm.isCameraExpanded
-    }
-
     private var mainContent: some View {
         HStack(alignment: .top, spacing: 15) {
             MusicPlayerView(albumArtNamespace: albumArtNamespace)
-
-            if shouldShowCamera {
-                CameraPreviewView(webcamManager: webcamManager)
-                    .scaledToFit()
-                    .opacity(vm.notchState == .closed ? 0 : 1)
-                    .blur(radius: vm.notchState == .closed ? 20 : 0)
-                    .animation(.interactiveSpring(response: 0.32, dampingFraction: 0.76, blendDuration: 0), value: shouldShowCamera)
-            }
         }
         .transition(.opacity)
         .blur(radius: vm.notchState == .closed ? 30 : 0)
