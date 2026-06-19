@@ -26,6 +26,8 @@ public enum NotchState {
 
 public enum NotchViews {
     case home
+    case calendar
+    case mirror
     case shelf
 }
 

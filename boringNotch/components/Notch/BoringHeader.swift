@@ -12,14 +12,20 @@ struct BoringHeader: View {
     @EnvironmentObject var vm: BoringViewModel
     @ObservedObject var batteryModel = BatteryStatusViewModel.shared
     @ObservedObject var coordinator = BoringViewCoordinator.shared
-    @StateObject var tvm = ShelfStateViewModel.shared
+    @ObservedObject var webcamManager = WebcamManager.shared
+
+    /// Whether the tab bar (left + right groups) should be shown.
+    private var tabsVisible: Bool {
+        Defaults[.showCalendar]
+            || Defaults[.boringShelf]
+            || (Defaults[.showMirror] && webcamManager.cameraAvailable)
+    }
+
     var body: some View {
         HStack(spacing: 0) {
             HStack {
-                if (!tvm.isEmpty || coordinator.alwaysShowTabs) && Defaults[.boringShelf] {
-                    TabSelectionView()
-                } else if vm.notchState == .open {
-                    EmptyView()
+                if vm.notchState == .open && tabsVisible {
+                    TabSelectionView(tabs: TabModel.leading)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -42,21 +48,8 @@ struct BoringHeader: View {
                         OpenNotchHUD(type: $coordinator.sneakPeek.type, value: $coordinator.sneakPeek.value, icon: $coordinator.sneakPeek.icon)
                             .transition(.scale(scale: 0.8).combined(with: .opacity))
                     } else {
-                        if Defaults[.showMirror] {
-                            Button(action: {
-                                vm.toggleCameraPreview()
-                            }) {
-                                Capsule()
-                                    .fill(.black)
-                                    .frame(width: 30, height: 30)
-                                    .overlay {
-                                        Image(systemName: "web.camera")
-                                            .foregroundColor(.white)
-                                            .padding()
-                                            .imageScale(.medium)
-                                    }
-                            }
-                            .buttonStyle(PlainButtonStyle())
+                        if tabsVisible && !TabModel.trailing.isEmpty {
+                            TabSelectionView(tabs: TabModel.trailing)
                         }
                         if Defaults[.settingsIconInNotch] {
                             Button(action: {

@@ -26,6 +26,9 @@ class CalendarManager: ObservableObject {
     private var selectedCalendars: [CalendarModel] = []
     private let calendarService = CalendarService()
 
+    /// How many days ahead the agenda looks (today + the next 6 days).
+    private let upcomingDaysWindow = 7
+
     private var eventStoreChangedObserver: NSObjectProtocol?
 
     private init() {
@@ -50,6 +53,7 @@ class CalendarManager: ObservableObject {
         ) { [weak self] _ in
             Task {
                 await self?.reloadCalendarAndReminderLists()
+                await self?.updateUpcomingEvents()
             }
         }
     }
@@ -79,20 +83,14 @@ class CalendarManager: ObservableObject {
             self.calendarAuthorizationStatus = granted ? .fullAccess : .denied
             if granted {
                 await reloadCalendarAndReminderLists()
-                events = await calendarService.events(
-                    from: currentWeekStartDate,
-                    to: Calendar.current.date(byAdding: .day, value: 1, to: currentWeekStartDate)!,
-                    calendars: selectedCalendars.map { $0.id })
+                await updateEvents()
             }
         case .restricted, .denied:
             NSLog("Calendar access denied or restricted")
         case .fullAccess:
             NSLog("Full access")
             await reloadCalendarAndReminderLists()
-            events = await calendarService.events(
-                from: currentWeekStartDate,
-                to: Calendar.current.date(byAdding: .day, value: 1, to: currentWeekStartDate)!,
-                calendars: selectedCalendars.map { $0.id })
+            await updateEvents()
         case .writeOnly:
             NSLog("Write only")
         @unknown default:
@@ -178,27 +176,28 @@ class CalendarManager: ObservableObject {
         return Calendar.current.startOfDay(for: date)
     }
 
-    func updateCurrentDate(_ date: Date) async {
-        currentWeekStartDate = Calendar.current.startOfDay(for: date)
+    /// Refresh the agenda window (today through the next several days).
+    func updateUpcomingEvents() async {
         await updateEvents()
     }
 
     private func updateEvents() async {
+        let cal = Calendar.current
+        let start = cal.startOfDay(for: Date())
+        let end = cal.date(byAdding: .day, value: upcomingDaysWindow, to: start) ?? start
+        currentWeekStartDate = start
         let calendarIDs = selectedCalendars.map { $0.id }
         let eventsResult = await calendarService.events(
-            from: currentWeekStartDate,
-            to: Calendar.current.date(byAdding: .day, value: 1, to: currentWeekStartDate)!,
+            from: start,
+            to: end,
             calendars: calendarIDs
         )
         self.events = eventsResult
     }
-    
+
     func setReminderCompleted(reminderID: String, completed: Bool) async {
         await calendarService.setReminderCompleted(reminderID: reminderID, completed: completed)
         // Refresh events after updating
-        events = await calendarService.events(
-            from: currentWeekStartDate,
-            to: Calendar.current.date(byAdding: .day, value: 1, to: currentWeekStartDate)!,
-            calendars: selectedCalendars.map { $0.id })
+        await updateEvents()
     }
 }
